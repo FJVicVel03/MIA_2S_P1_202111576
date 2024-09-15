@@ -3,6 +3,7 @@ package structures
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -137,6 +138,21 @@ func (mbr *MBR) GetPartitionByName(name string) (*PARTITION, int) {
 		}
 	}
 	return nil, -1
+}
+
+// Función para obtener una partición por ID
+func (mbr *MBR) GetPartitionByID(id string) (*PARTITION, error) {
+	for i := 0; i < len(mbr.Mbr_partitions); i++ {
+		// Convertir Part_name a string y eliminar los caracteres nulos
+		partitionID := strings.Trim(string(mbr.Mbr_partitions[i].Part_id[:]), "\x00 ")
+		// Convertir el id a string y eliminar los caracteres nulos
+		inputID := strings.Trim(id, "\x00 ")
+		// Si el nombre de la partición coincide, devolver la partición
+		if strings.EqualFold(partitionID, inputID) {
+			return &mbr.Mbr_partitions[i], nil
+		}
+	}
+	return nil, errors.New("partición no encontrada")
 }
 
 func CreateInitialMBR(path string) error {

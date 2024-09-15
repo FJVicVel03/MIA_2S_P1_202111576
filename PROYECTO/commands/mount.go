@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"PROYECTO/global"
 	"PROYECTO/structures"
 	"PROYECTO/utils"
 	"errors"
@@ -15,12 +16,6 @@ type MOUNT struct {
 	name string // Nombre de la partición
 }
 
-/*
-	mount -path=/home/Disco1.mia -name=Part1 #id=341a
-	mount -path=/home/Disco2.mia -name=Part1 #id=342a
-	mount -path=/home/Disco3.mia -name=Part2 #id=343a
-*/
-
 // CommandMount parsea el comando mount y devuelve una instancia de MOUNT
 func ParserMount(tokens []string) (*MOUNT, error) {
 	cmd := &MOUNT{} // Crea una nueva instancia de MOUNT
@@ -34,39 +29,24 @@ func ParserMount(tokens []string) (*MOUNT, error) {
 
 	// Itera sobre cada coincidencia encontrada
 	for _, match := range matches {
-		// Divide cada parte en clave y valor usando "=" como delimitador
 		kv := strings.SplitN(match, "=", 2)
 		if len(kv) != 2 {
 			return nil, fmt.Errorf("formato de parámetro inválido: %s", match)
 		}
 		key, value := strings.ToLower(kv[0]), kv[1]
-
-		// Remove quotes from value if present
 		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 			value = strings.Trim(value, "\"")
 		}
-
-		// Switch para manejar diferentes parámetros
 		switch key {
 		case "-path":
-			// Verifica que el path no esté vacío
-			if value == "" {
-				return nil, errors.New("el path no puede estar vacío")
-			}
 			cmd.path = value
 		case "-name":
-			// Verifica que el nombre no esté vacío
-			if value == "" {
-				return nil, errors.New("el nombre no puede estar vacío")
-			}
 			cmd.name = value
 		default:
-			// Si el parámetro no es reconocido, devuelve un error
 			return nil, fmt.Errorf("parámetro desconocido: %s", key)
 		}
 	}
 
-	// Verifica que los parámetros -path y -name hayan sido proporcionados
 	if cmd.path == "" {
 		return nil, errors.New("faltan parámetros requeridos: -path")
 	}
@@ -83,6 +63,7 @@ func ParserMount(tokens []string) (*MOUNT, error) {
 	return cmd, nil // Devuelve el comando MOUNT creado
 }
 
+// mount -path=Disco2.mia -name=Particion3
 func commandMount(mount *MOUNT) error {
 	// Crear una instancia de MBR
 	var mbr structures.MBR
@@ -97,25 +78,89 @@ func commandMount(mount *MOUNT) error {
 	// Buscar la partición con el nombre especificado
 	partition, indexPartition := mbr.GetPartitionByName(mount.name)
 	if partition == nil {
-		fmt.Println("Error: la partición no existe")
-		return errors.New("la partición no existe")
+		// Si no se encuentra una partición primaria o extendida, buscar en las particiones lógicas
+		for _, part := range mbr.Mbr_partitions {
+			if part.Part_type[0] == 'E' {
+				var ebr structures.EBR
+				err := ebr.DeserializeEBR(mount.path, part.Part_start)
+				if err != nil {
+					fmt.Println("Error deserializando el EBR:", err)
+					return err
+				}
+				for {
+					ebrName := strings.Trim(string(ebr.Part_name[:]), "\x00 ")
+					if strings.EqualFold(ebrName, mount.name) {
+						var partID [4]byte
+						copy(partID[:], ebr.Part_id[:])
+						partition = &structures.PARTITION{
+							Part_status:      [1]byte{ebr.Part_status},
+							Part_type:        [1]byte{"L"[0]},
+							Part_fit:         [1]byte{ebr.Part_fit},
+							Part_start:       ebr.Part_start,
+							Part_size:        ebr.Part_size,
+							Part_name:        ebr.Part_name,
+							Part_correlative: 0,
+							Part_id:          partID,
+						}
+						indexPartition = -1
+						break
+					}
+					if ebr.Part_next == -1 {
+						break
+					}
+					err = ebr.DeserializeEBR(mount.path, ebr.Part_next)
+					if err != nil {
+						fmt.Println("Error deserializando el EBR:", err)
+						return err
+					}
+				}
+			}
+		}
+		if partition == nil {
+			fmt.Println("Error: la partición no existe")
+			return errors.New("la partición no existe")
+		}
 	}
 
+	/* SOLO PARA VERIFICACIÓN */
+	// Print para verificar que la partición fue encontrada
+	fmt.Println("\nPartición encontrada:")
+	partition.Print()
+
 	// Generar un id único para la partición
-	idPartition, err := GenerateIdPartition(mount, indexPartition)
+	logicalIndex := -1
+	if partition.Part_type[0] == 'L' {
+		logicalIndex = 0 // or any other logic to determine the logical partition index
+	}
+	idPartition, err := GenerateIdPartition(mount, logicalIndex)
 	if err != nil {
 		fmt.Println("Error generando el id de partición:", err)
 		return err
 	}
 
-	//  Guardar la partición montada en la lista de montajes globales
-	utils.GlobalMounts[idPartition] = mount.path
+	// Guardar la partición montada en la lista de montajes globales
+	global.MountedPartitions[idPartition] = mount.path
 
 	// Modificamos la partición para indicar que está montada
-	partition.MountPartition(indexPartition, idPartition)
-
-	// Guardar la partición modificada en el MBR
-	mbr.Mbr_partitions[indexPartition] = *partition
+	if indexPartition != -1 {
+		partition.MountPartition(indexPartition, idPartition)
+		mbr.Mbr_partitions[indexPartition] = *partition
+	} else {
+		// Handle logical partition mounting
+		var ebr structures.EBR
+		err := ebr.DeserializeEBR(mount.path, partition.Part_start)
+		if err != nil {
+			fmt.Println("Error deserializando el EBR:", err)
+			return err
+		}
+		ebr.Part_status = '2' // Indicate that the partition is mounted
+		copy(ebr.Part_id[:], idPartition)
+		err = ebr.SerializeEBR(mount.path, partition.Part_start)
+		if err != nil {
+			fmt.Println("Error serializando el EBR:", err)
+			return err
+		}
+	}
 
 	// Serializar la estructura MBR en el archivo binario
 	err = mbr.Serialize(mount.path)
@@ -123,6 +168,11 @@ func commandMount(mount *MOUNT) error {
 		fmt.Println("Error serializando el MBR:", err)
 		return err
 	}
+
+	/* SOLO PARA VERIFICACIÓN */
+	// Print para verificar que la partición fue montada
+	fmt.Println("\nPartición montada exitosamente:")
+	partition.Print()
 
 	return nil
 }
@@ -136,7 +186,7 @@ func GenerateIdPartition(mount *MOUNT, indexPartition int) (string, error) {
 	}
 
 	// Crear id de partición
-	idPartition := fmt.Sprintf("%s%d%s", utils.Carnet, indexPartition, letter)
+	idPartition := fmt.Sprintf("%s%d%s", utils.Carnet, indexPartition+1, letter)
 
 	return idPartition, nil
 }

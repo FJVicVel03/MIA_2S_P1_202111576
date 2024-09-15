@@ -12,6 +12,7 @@ type EBR struct {
 	Part_size   int64
 	Part_next   int64
 	Part_name   [16]byte
+	Part_id     [16]byte
 }
 
 func (e *EBR) DeserializeEBR(path string, start int64) error {

@@ -1,0 +1,13 @@
+digraph G {
+rankdir=LR;
+margin=0.1;
+label="Reporte de Disco";
+labelloc="t";
+fontsize=30;
+node [shape=plaintext];
+n1 [label=<
+<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="3" CELLPADDING="10">
+<TR>
+<TD ROWSPAN="2" WIDTH="140" HEIGHT="100" BGCOLOR="lightblue" ALIGN="CENTER" VALIGN="MIDDLE">MBR</TD>
+<TD WIDTH="140" HEIGHT="100" BGCOLOR="lightgreen" ALIGN="CENTER" VALIGN="MIDDLE">Particion1 20.00% del Disco</TD><TD WIDTH="140" HEIGHT="100" BGCOLOR="lightgreen" ALIGN="CENTER" VALIGN="MIDDLE">Particion2 0.20% del Disco</TD><TD WIDTH="140" HEIGHT="100" BGCOLOR="white" ALIGN="CENTER" VALIGN="MIDDLE">Libre 79.80% del Disco</TD></TR></TABLE>>];
+}

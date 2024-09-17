@@ -24,6 +24,8 @@ func Analyzer(input string) (interface{}, error) {
 		return commands.ParserRmdisk(tokens[1:])
 	case "fdisk":
 		return commands.ParserFdisk(tokens[1:])
+	case "mkfs":
+		return commands.ParserMkfs(tokens[1:])
 	case "rep":
 		return commands.ParserRep(tokens[1:])
 	case "execute":

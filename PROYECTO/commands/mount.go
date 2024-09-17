@@ -185,8 +185,11 @@ func GenerateIdPartition(mount *MOUNT, indexPartition int) (string, error) {
 		return "", err
 	}
 
+	// Incrementar el contador global
+	global.PartitionCounter++
+
 	// Crear id de partición
-	idPartition := fmt.Sprintf("%s%d%s", utils.Carnet, indexPartition+1, letter)
+	idPartition := fmt.Sprintf("%s%d%s", utils.Carnet, global.PartitionCounter, letter)
 
 	return idPartition, nil
 }

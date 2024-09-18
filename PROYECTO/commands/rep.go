@@ -114,6 +114,12 @@ func commandRep(rep *REP) error {
 		return err
 	}
 
+	// Obtener el nombre del disco basado en el ID, asumiendo que tienes una función
+	diskName, err := global.GetDiskNameByID(rep.id) // Debes implementar esta función
+	if err != nil {
+		return fmt.Errorf("no se pudo encontrar el nombre del disco para el ID: %s", rep.id)
+	}
+
 	// Switch para manejar diferentes tipos de reportes
 	switch rep.name {
 	case "mbr":
@@ -136,7 +142,13 @@ func commandRep(rep *REP) error {
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 		}
-	}
+	case "sb": // Reporte de SuperBloque
+		err = reports.ReportSuperBlock(mountedSb, rep.path, diskName) // Pasar el nombre del disco
+		if err != nil {
+			fmt.Printf("Error generando el reporte SuperBloque: %v\n", err)
+		}
 
+		return nil
+	}
 	return nil
 }

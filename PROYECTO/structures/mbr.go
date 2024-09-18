@@ -204,3 +204,20 @@ func (mbr *MBR) PrintPartitions() {
 		fmt.Printf("  ID: %s\n", partID)
 	}
 }
+
+func (mbr *MBR) GetLogicalPartitions(path string, extendedPartition *PARTITION) ([]EBR, error) {
+	var logicalPartitions []EBR
+	nextEBR := extendedPartition.Part_start
+
+	for nextEBR != -1 {
+		ebr := NewEBR()
+		err := ebr.DeserializeEBR(path, nextEBR)
+		if err != nil {
+			return nil, err
+		}
+		logicalPartitions = append(logicalPartitions, ebr)
+		nextEBR = ebr.Part_next
+	}
+
+	return logicalPartitions, nil
+}

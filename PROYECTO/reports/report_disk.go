@@ -46,42 +46,18 @@ n1 [label=<
 
 		// Si es una partición extendida
 		if partType == 'E' {
-			dotContent += `<TD>
-            <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="1">
-            <TR><TD COLSPAN="2">Extendida</TD></TR>`
+			// Calcular el porcentaje que ocupa la partición extendida
+			extendedPercentage := float64(part.Part_size) / float64(totalSize) * 100
 
-			// Leer las particiones lógicas dentro de la partición extendida
-			nextEBR := part.Part_start
-			for nextEBR != -1 {
-				// Crear un nuevo EBR y deserializarlo
-				ebr := structures.NewEBR()
-				err := ebr.DeserializeEBR(path, nextEBR)
-				if err != nil {
-					return fmt.Errorf("error al deserializar EBR: %v", err)
-				}
-
-				// Calcular el porcentaje de la partición lógica
-				logicalPercentage := float64(ebr.Part_size) / float64(totalSize) * 100
-				if logicalPercentage > 100 {
-					return fmt.Errorf("Error: El tamaño de la partición lógica excede el tamaño total del disco")
-				}
-
-				// Agregar la partición lógica a la tabla
-				logicalName := strings.TrimRight(string(ebr.Part_name[:]), "\x00")
-				dotContent += fmt.Sprintf(`<TR><TD>EBR</TD><TD>Lógica %.2f%% del Disco (%s)</TD></TR>`, logicalPercentage, logicalName)
-
-				// Verificar si hay más particiones lógicas enlazadas
-				nextEBR = ebr.Part_next
+			if extendedPercentage > 100 {
+				return fmt.Errorf("Error: El tamaño de la partición excede el tamaño total del disco")
 			}
 
-			dotContent += `</TABLE></TD>`
-
-		} else {
+			dotContent += fmt.Sprintf(`<TD WIDTH="140" HEIGHT="100" BGCOLOR="lightyellow" ALIGN="CENTER" VALIGN="MIDDLE">Extendida %.2f%% del Disco</TD>`, extendedPercentage)
+		} else if partType == 'P' {
 			// Para particiones primarias
-			// Calcular el porcentaje de la partición
 			percentage := float64(part.Part_size) / float64(totalSize) * 100
 
-			// Si el porcentaje calculado es mayor al 100%, eso es un problema
 			if percentage > 100 {
 				return fmt.Errorf("Error: El tamaño de la partición excede el tamaño total del disco")
 			}
@@ -91,6 +67,7 @@ n1 [label=<
 		}
 	}
 
+	// Calcular el espacio libre
 	freeSpace := totalSize
 	for _, part := range mbr.Mbr_partitions {
 		if part.Part_size != -1 {

@@ -11,12 +11,20 @@ fdisk -size=10 -type=E -unit=K -fit=BF -name="Particion3" -path="discos/DiscoLab
 fdisk -size=1 -type=L -unit=B -fit=WF -name="Particion4" -path="discos/DiscoLab.mia"
 fdisk -size=1 -type=L -unit=K -fit=WF -name="Particion5" -path="discos/DiscoLab.mia"
 
+fdisk -delete=fast -name="Particion5" -path="discos/DiscoLab.mia"
+fdisk -delete=full -name="Particion4" -path="discos/DiscoLab.mia"
+
+fdisk -add=10 -unit=K -path="discos/DiscoLab.mia" -name="Particion1"
+fdisk -add=1 -unit=M -path="discos/DiscoLab.mia" -name="Particion2"
+
 
 mount -name="Particion1" -path="discos/DiscoLab.mia"
 mount -name="Particion2" -path="discos/DiscoLab.mia"
 
 mount -name="Particion3" -path="discos/DiscoLab.mia"
 mount -name="Particion4" -path="discos/DiscoLab.mia"
+
+unmount -id=761A
 
 
 mkfs -id=761A

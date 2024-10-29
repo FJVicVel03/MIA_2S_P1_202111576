@@ -26,12 +26,14 @@ operación de manera exitosa.
 */
 
 type FDISK struct {
-	size int    // Tamaño de la partición
-	unit string // Unidad de medida del tamaño
-	fit  string // Tipo de ajuste (BF, FF, WF)
-	path string // Ruta del disco
-	typ  string // Tipo de partición (P, E, L)
-	name string // Nombre de la partición
+	size   int    // Tamaño de la partición
+	unit   string // Unidad de medida del tamaño
+	fit    string // Tipo de ajuste (BF, FF, WF)
+	path   string // Ruta del disco
+	typ    string // Tipo de partición (P, E, L)
+	name   string // Nombre de la partición
+	add    int    // Espacio a añadir o eliminar
+	delete string // Tipo de eliminación (fast, full)
 }
 
 // fdisk -size=300 -path=/home/Disco1.mia -name=Particion1
@@ -42,7 +44,7 @@ func ParserFdisk(tokens []string) (string, error) {
 	// Unir tokens en una sola cadena y luego dividir por espacios, respetando las comillas
 	args := strings.Join(tokens, " ")
 	// Expresión regular para encontrar los parámetros del comando fdisk
-	re := regexp.MustCompile(`-size=\d+|-unit=[kKmM]|-fit=[bBfF]{2}|-path="[^"]+"|-path=[^\s]+|-type=[pPeElL]|-name="[^"]+"|-name=[^\s]+`)
+	re := regexp.MustCompile(`-size=\d+|-unit=[kKmM]|-fit=[bBfF]{2}|-path="[^"]+"|-path=[^\s]+|-type=[pPeElL]|-name="[^"]+"|-name=[^\s]+|-delete=(fast|full)|-add=-?\d+`)
 	// Encuentra todas las coincidencias de la expresión regular en la cadena de argumentos
 	matches := re.FindAllString(args, -1)
 
@@ -101,6 +103,19 @@ func ParserFdisk(tokens []string) (string, error) {
 				return "", errors.New("el nombre no puede estar vacío")
 			}
 			cmd.name = value
+		case "-delete":
+			// Verifica que el tipo de eliminación sea "fast" o "full"
+			if value != "fast" && value != "full" {
+				return "", errors.New("el tipo de eliminación debe ser fast o full")
+			}
+			cmd.delete = value
+		case "-add":
+			// Convierte el valor del espacio a añadir a un entero
+			add, err := strconv.Atoi(value)
+			if err != nil {
+				return "", errors.New("el valor de -add debe ser un número entero")
+			}
+			cmd.add = add
 		default:
 			// Si el parámetro no es reconocido, devuelve un error
 			return "", fmt.Errorf("parámetro desconocido: %s", key)
@@ -108,8 +123,8 @@ func ParserFdisk(tokens []string) (string, error) {
 	}
 
 	// Verifica que los parámetros -size, -path y -name hayan sido proporcionados
-	if cmd.size == 0 {
-		return "", errors.New("faltan parámetros requeridos: -size")
+	if cmd.size == 0 && cmd.add == 0 && cmd.delete == "" {
+		return "", errors.New("faltan parámetros requeridos: -size, -add o -delete")
 	}
 	if cmd.path == "" {
 		return "", errors.New("faltan parámetros requeridos: -path")
@@ -133,6 +148,14 @@ func ParserFdisk(tokens []string) (string, error) {
 		cmd.typ = "P"
 	}
 
+	// Llamar a la función correspondiente según los parámetros proporcionados
+	if cmd.delete != "" {
+		return deletePartition(cmd)
+	}
+	if cmd.add != 0 {
+		return addPartitionSpace(cmd)
+	}
+
 	// Crear la partición con los parámetros proporcionados
 	err := commandFdisk(cmd)
 	if err != nil {
@@ -141,6 +164,7 @@ func ParserFdisk(tokens []string) (string, error) {
 
 	return "FDISK: Partición creada exitosamente", nil // Devuelve el comando FDISK creado
 }
+
 func commandFdisk(fdisk *FDISK) error {
 	// Convertir el tamaño a bytes
 	sizeBytes, err := utils.ConvertToBytes(fdisk.size, fdisk.unit)
@@ -364,4 +388,94 @@ func createLogicalPartition(fdisk *FDISK, sizeBytes int) error {
 	fmt.Println(" ")
 	newEBR.Print()
 	return nil
+}
+
+func deletePartition(cmd *FDISK) (string, error) {
+	var mbr structures.MBR
+
+	// Deserializar el MBR desde el archivo binario
+	err := mbr.DeserializeMBR(cmd.path)
+	if err != nil {
+		fmt.Println("Error deserializando el MBR:", err)
+		return "", err
+	}
+
+	// Buscar la partición por nombre
+	partition, index := mbr.GetPartitionByName(cmd.name)
+	if partition == nil {
+		return "", errors.New("no se encontró la partición")
+	}
+
+	// Confirmar la eliminación de la partición
+	fmt.Printf("¿Está seguro de que desea eliminar la partición %s? (s/n): ", cmd.name)
+	var response string
+	fmt.Scanln(&response)
+	if strings.ToLower(response) != "s" {
+		return "", errors.New("eliminación de partición cancelada")
+	}
+
+	// Eliminar la partición
+	if cmd.delete == "fast" {
+		partition.Part_status = [1]byte{'0'}
+	} else if cmd.delete == "full" {
+		partition = &structures.PARTITION{}
+	}
+
+	// Actualizar el MBR
+	mbr.Mbr_partitions[index] = *partition
+
+	// Serializar el MBR actualizado
+	err = mbr.SerializeMBR(cmd.path)
+	if err != nil {
+		fmt.Println("Error serializando el MBR:", err)
+		return "", err
+	}
+
+	return "Partición eliminada exitosamente", nil
+}
+
+func addPartitionSpace(cmd *FDISK) (string, error) {
+	var mbr structures.MBR
+
+	// Deserializar el MBR desde el archivo binario
+	err := mbr.DeserializeMBR(cmd.path)
+	if err != nil {
+		fmt.Println("Error deserializando el MBR:", err)
+		return "", err
+	}
+
+	// Buscar la partición por nombre
+	partition, index := mbr.GetPartitionByName(cmd.name)
+	if partition == nil {
+		return "", errors.New("no se encontró la partición")
+	}
+
+	// Calcular el nuevo tamaño de la partición
+	newSize := int(partition.Part_size) + cmd.add
+	if newSize <= 0 {
+		return "", errors.New("el tamaño resultante de la partición no puede ser menor o igual a cero")
+	}
+
+	// Verificar si hay suficiente espacio libre después de la partición
+	if cmd.add > 0 {
+		nextPartitionStart := partition.Part_start + partition.Part_size
+		if nextPartitionStart+int64(cmd.add) > int64(mbr.Mbr_size) {
+			return "", errors.New("no hay suficiente espacio libre para aumentar el tamaño de la partición")
+		}
+	}
+
+	// Actualizar el tamaño de la partición
+	partition.Part_size = int64(newSize)
+
+	// Actualizar el MBR
+	mbr.Mbr_partitions[index] = *partition
+
+	// Serializar el MBR actualizado
+	err = mbr.SerializeMBR(cmd.path)
+	if err != nil {
+		fmt.Println("Error serializando el MBR:", err)
+		return "", err
+	}
+
+	return "Espacio de la partición actualizado exitosamente", nil
 }

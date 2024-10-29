@@ -49,6 +49,8 @@ func Analyzer(input string) (string, error) {
 			output, err = commands.ParserExecute(tokens[1:])
 		case "mount":
 			output, err = commands.ParserMount(tokens[1:])
+		case "unmount":
+			output, err = commands.ParserUnmount(tokens[1:])
 		case "cat":
 			output, err = commands.ParserCat(tokens[1:])
 		case "login":
